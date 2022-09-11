@@ -1,0 +1,31 @@
+---
+title: "BRCA Gene Expression Analyses"
+author: "Lizzy Ramsey"
+date: "9/10/2022"
+output: html_document
+---
+
+load packages (note: for first time using a package, it first must be installed. You can do this by running BiocManager::install("packagename") first before loading it library(packagename) )
+```{r}
+library(recount3)
+
+```
+View projects in recount3 
+```{r}
+human_projects<- available_projects()
+View(human_projects)
+```
+
+Create ranged summarized experiemnt (RSE) manual for TCGA BRCA data
+```{r}
+brca_data <- recount3::create_rse_manual(
+    project = "BRCA",
+    project_home = "data_sources/tcga",
+    organism = "human",
+    annotation = "gencode_v26",
+    type = "gene")
+
+```
+
+
+
