@@ -55,7 +55,7 @@ brca_primary_metadata <- dplyr::filter(brca_metadata, tcga.cgc_sample_sample_typ
 
 View counts data from the RSE
 ```{r}
-str(assays(brca_counts))
+str(assays(brca_data))
 ```
 
 
@@ -80,6 +80,7 @@ brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_primary_metadata)))
 
 Save subsetted BRCA counts and metadata
 ```{r}
+#please note-- to save to this filepath, you need a 'data' folder where ever your current working directory is (you can find out your working directory with getwd() ) so you can either change this filepath or create a 'data' folder in your current working directory
 write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 
 write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
