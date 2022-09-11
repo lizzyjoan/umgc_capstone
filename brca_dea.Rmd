@@ -8,13 +8,20 @@ output: html_document
 load packages (note: for first time using a package, it first must be installed. You can do this by running BiocManager::install("packagename") first before loading it library(packagename) )
 ```{r}
 library(recount3)
-
+library(dplyr)
 ```
+
 View projects in recount3 
 ```{r}
 human_projects<- available_projects()
 View(human_projects)
 ```
+recount3 enables creating RangedSummarizedExperiment objects that contain expression quantitative data ([Figure 2](https://www.bioconductor.org/packages/devel/bioc/vignettes/recount3/inst/doc/recount3-quickstart.html) ). As a quick overview, some of the main terms are:  
+__rse:__ a RangedSummarizedExperiment object from SummarizedExperiment (Morgan, Obenchain, Hester, and Pagès, 2019) that contains:  
+__counts:__ a matrix with the expression feature data (either: gene, exon, or exon-exon junctions) and that can be accessed using assays(counts).  
+__metadata:__ a table with information about the samples and quality metrics that can be accessed using colData(rse).  
+__annotation:__ a table-like object with information about the expression features which can be annotation-specific (gene and exons) or annotation-agnostic (exon-exon junctions). This information can be accessed using rowRanges(rse).  
+^^Taken from the [vignette](https://www.bioconductor.org/packages/devel/bioc/vignettes/recount3/inst/doc/recount3-quickstart.html) 
 
 Create ranged summarized experiemnt (RSE) manual for TCGA BRCA data
 ```{r}
@@ -27,5 +34,54 @@ brca_data <- recount3::create_rse_manual(
 
 ```
 
+Look at structure of rse object
+```{r}
+str(brca_data)
+```
 
+Explore metadata (take a good look at this - there's tons of metadata... we can include these things as covariates, decide to exclude samples based on certain criteria here, and/or make plots for some of these... there's morphology, tumor classification, patient ethnicity, age, days to death, treatments, clinical stage, pregnancies, and so much more)
+```{r}
+brca_metadata <- as.data.frame(colData(brca_data))
+View(brca_metadata)
+#what are all the available sample types?
+unique(brca_metadata$tcga.cgc_sample_sample_type)
+```
+
+Let's focus on just Primary Tumors (metastastic ones are extra weird, and the solid tissue normal has been shown to not very 'normal' in previous studies)
+```{r}
+#filter for primary tumors
+brca_primary_metadata <- dplyr::filter(brca_metadata, tcga.cgc_sample_sample_type == "Primary Tumor") #dplyr:: is just to say that I want to use the 'filter' function from the 'dplyr' package -- helps keep R from getting confused about using the 'filter' function from another package or base R 
+```
+
+View counts data from the RSE
+```{r}
+str(assays(brca_counts))
+```
+
+
+Now generate Transcripts Per Million (TPM) from counts data
+```{r}
+#first, scale the raw counts
+assay(brca_data, "counts") <- transform_counts(brca_data)
+#calculate TPM
+assays(brca_data)$TPM <- recount::getTPM(brca_data, length_var = "bp_length")
+#view the counts data -- section for 'TPM' now
+str(brca_data@assays@data@listData)
+```
+
+
+Data wrangling -- make counts into dataframe, then subset for the samples that are 'Primary Tumor' ones
+```{r}
+brca_tpm <- as.data.frame(brca_data@assays@data@listData$TPM)
+
+brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_primary_metadata)))
+```
+
+
+Save subsetted BRCA counts and metadata
+```{r}
+write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
+
+write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
+```
 
