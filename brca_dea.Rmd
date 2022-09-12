@@ -148,3 +148,55 @@ write.csv(breast_metadata, "./data/breast_healthy_metadata.csv")
 
 write.csv(breast_tpm, "./data/breast_healthy_tpm_expdata.csv")
 ```
+
+### Differential Expression Analysis  
+LIMMA is a linear model with empirical bayes for finding differentially expressed genes.
+[LIMMA user guide](https://www.bioconductor.org/packages/devel/bioc/vignettes/limma/inst/doc/usersguide.pdf)  
+[Guide for creating a design matrix](https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html)
+Random subset of first 10 samples for practice run through
+```{r}
+brca_test <- brca_tpm[,1:10]
+ctl_test <- breast_tpm[,1:10]
+#brca_test_meta <- 
+```
+
+Make new metadata, control vs tumor
+```{r}
+lm_meta <- data.frame("Samples" = c(colnames(brca_test), colnames(ctl_test)), Condition = c(rep("Tumor", length(brca_test)), rep("Control", length(ctl_test))))
+
+```
+
+Last normalization step will be log-transformation of the TPM values
+```{r}
+
+
+```
+
+--------------------
+--- my previous code ---
+#make a design matrix by genotype
+des  <- model.matrix(~meta_39$Genotype)
+
+#makes object for convenient use
+dge  <- DGEList(counts=cts_39 )
+#remove genes consistently zero or very low
+keep  <- filterByExpr(dge , design = des )
+dge  <- dge[keep ,,keep.lib.sizes=FALSE]
+
+#TMM normalization method
+dge  <- calcNormFactors(dge )
+#convert counts to  log2-counts-per-million (logCPM), prior.count used as avg count to be added to each obs to avoid taking log of zero 
+logCPM  <- cpm(dge , log=TRUE, prior.count=3)
+
+#linear model and use emperical bayes prior trend to model mean-variance relationship
+fit  <- lmFit(logCPM , des )
+
+#absolute log2fc > 2
+fit  <- limma::treat(fit , fc = 1.2, trend=TRUE)
+
+#compute BH p-adjusted values, only values meeting 0.05 cutoff, avg expression, and all in nice table like top 10
+lm_res  <- topTreat(fit , coef=ncol(des ), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
+
+#data wrangle to prepare for othrologue mapping 
+lm_res <- tibble::rownames_to_column(lm_res, var = "Mouse.gene.stable.ID")
+return(lm_res)
