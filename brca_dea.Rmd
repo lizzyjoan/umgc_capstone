@@ -22,8 +22,9 @@ __counts:__ a matrix with the expression feature data (either: gene, exon, or ex
 __metadata:__ a table with information about the samples and quality metrics that can be accessed using colData(rse).  
 __annotation:__ a table-like object with information about the expression features which can be annotation-specific (gene and exons) or annotation-agnostic (exon-exon junctions). This information can be accessed using rowRanges(rse).  
 ^^Taken from the [vignette](https://www.bioconductor.org/packages/devel/bioc/vignettes/recount3/inst/doc/recount3-quickstart.html) 
-
-Create ranged summarized experiemnt (RSE) manual for TCGA BRCA data
+  
+### TCGA
+Create ranged summarized experiemnt (RSE) manual for TCGA BRCA data. Use the data listed for BRCA when looking at 'human_projects' from recount3  
 ```{r}
 brca_data <- recount3::create_rse_manual(
     project = "BRCA",
@@ -45,6 +46,8 @@ brca_metadata <- as.data.frame(colData(brca_data))
 View(brca_metadata)
 #what are all the available sample types?
 unique(brca_metadata$tcga.cgc_sample_sample_type)
+#what are the ages at diagnosis?
+summary(brca_metadata$tcga.cgc_case_age_at_diagnosis) 
 ```
 
 Let's focus on just Primary Tumors (metastastic ones are extra weird, and the solid tissue normal has been shown to not very 'normal' in previous studies)
@@ -86,3 +89,62 @@ write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
 ```
 
+### GTEx  
+Looking at human_projects, find listing for GTEx breast data (just like done previously for TCGA BRCA)
+```{r}
+breast_data <- recount3::create_rse_manual(
+    project = "BREAST",
+    project_home = "data_sources/gtex",
+    organism = "human",
+    annotation = "gencode_v26",
+    type = "gene")
+
+```
+
+Look at structure of rse object
+```{r}
+str(breast_data)
+```
+
+Explore metadata. We need to keep in mind the balance of data (for example, 'summary' of sex looks like it's almost half male/female, while the TCGA BRCA samples were almost all females. Also need to be aware of difference in reporting -- age for brca_metadata$tcga.cgc_case_age_at_diagnosis is exact age, and age for GTEx looks like it's in decade age ranges, i.e. 20-29, 30-39, etc )
+```{r}
+breast_metadata <- as.data.frame(colData(breast_data))
+View(breast_metadata)
+#all metadata columns
+colnames(breast_metadata)
+#what are all the available sample types?
+unique(breast_metadata$gtex.age)
+```
+
+
+View counts data from the RSE
+```{r}
+str(assays(breast_data))
+```
+
+
+Now generate Transcripts Per Million (TPM) from counts data
+```{r}
+#first, scale the raw counts
+assay(breast_data, "counts") <- transform_counts(breast_data)
+#calculate TPM
+assays(breast_data)$TPM <- recount::getTPM(breast_data, length_var = "bp_length")
+#view the counts data -- section for 'TPM' now
+str(breast_data@assays@data@listData)
+```
+
+
+Data wrangling -- make counts into dataframe 
+```{r}
+breast_tpm <- as.data.frame(breast_data@assays@data@listData$TPM)
+
+```
+
+
+Save subsetted BRCA counts and metadata
+```{r}
+#please note-- to save to this filepath, you need a 'data' folder where ever your current working directory is (you can find out your working directory with getwd() ) so you can either change this filepath or create a 'data' folder in your current working directory
+write.csv(breast_metadata, "./data/breast_healthy_metadata.csv")
+
+write.csv(breast_tpm, "./data/breast_healthy_tpm_expdata.csv")
+```
