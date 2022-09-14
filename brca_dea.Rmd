@@ -7,8 +7,9 @@ output: html_document
 
 load packages (note: for first time using a package, it first must be installed. You can do this by running BiocManager::install("packagename") first before loading it library(packagename) )
 ```{r}
-library(recount3)
-library(dplyr)
+library(recount3) #for accessing data
+library(dplyr) #great package for data wrangling
+library(ggplot2) #package for plotting
 ```
 
 View projects in recount3 
@@ -40,7 +41,8 @@ Look at structure of rse object
 str(brca_data)
 ```
 
-Explore metadata (take a good look at this - there's tons of metadata... we can include these things as covariates, decide to exclude samples based on certain criteria here, and/or make plots for some of these... there's morphology, tumor classification, patient ethnicity, age, days to death, treatments, clinical stage, pregnancies, and so much more)
+#### Explore metadata  
+(take a good look at this - there's tons of metadata... we can include these things as covariates, decide to exclude samples based on certain criteria here, and/or make plots for some of these... there's morphology, tumor classification, patient ethnicity, age, days to death, treatments, clinical stage, pregnancies, and so much more)
 ```{r}
 brca_metadata <- as.data.frame(colData(brca_data))
 View(brca_metadata)
@@ -50,11 +52,75 @@ unique(brca_metadata$tcga.cgc_sample_sample_type)
 summary(brca_metadata$tcga.cgc_case_age_at_diagnosis) 
 ```
 
+
 Let's focus on just Primary Tumors (metastastic ones are extra weird, and the solid tissue normal has been shown to not very 'normal' in previous studies)
 ```{r}
 #filter for primary tumors
 brca_primary_metadata <- dplyr::filter(brca_metadata, tcga.cgc_sample_sample_type == "Primary Tumor") #dplyr:: is just to say that I want to use the 'filter' function from the 'dplyr' package -- helps keep R from getting confused about using the 'filter' function from another package or base R 
 ```
+
+Subset for patients with drug treatment data, count frequencies of each
+```{r}
+brca_drug_meta <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_drug_therapy_drug_name)
+
+#Frequency of treatments
+trt_freq <- as.data.frame(table(brca_drug_meta$tcga.cgc_drug_therapy_drug_name))
+View(trt_freq)
+```
+
+look at table--note the different counts for some drugs like "doxorubicin" "Doxorubicin""DOXORUBICIN" ... we need to make all lowercase 
+```{r}
+#change all drugs to completely lowercase
+brca_drug_meta$tcga.cgc_drug_therapy_drug_name <- tolower(brca_drug_meta$tcga.cgc_drug_therapy_drug_name)
+
+#Frequency of treatments
+trt_freq <- as.data.frame(table(brca_drug_meta$tcga.cgc_drug_therapy_drug_name))
+View(trt_freq)
+
+```
+
+Visualize most-used drugs and their frequencies
+```{r}
+top_trts <- dplyr::slice_max(trt_freq, order_by = Freq, n = 15)
+
+ggplot(top_trts, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values on top
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = Freq), vjust = 0) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
+
+```
+
+Subset data by patients treated with any of the top 10 most-frequent drugs
+```{r}
+#top 15 included some with just 9... went a little stricter, to top 10
+top_trts <- dplyr::slice_max(trt_freq, order_by = Freq, n = 10)
+
+#subset for patients treated with one of the top 10 most frequent drugs
+brca_toptrt_meta <- dplyr::filter(brca_drug_meta, tcga.cgc_drug_therapy_drug_name %in% top_trts$Var1) 
+#we can double check that those are the only treatments in this df 
+unique(brca_toptrt_meta$tcga.cgc_drug_therapy_drug_name)
+
+```
+
+Stages of new subset
+```{r}
+#what are the stages included?
+unique(brca_toptrt_meta$tcga.xml_stage_event_pathologic_stage)
+#Frequency of treatments
+stage_freq <- as.data.frame(table(brca_drug_meta$tcga.xml_stage_event_pathologic_stage))
+View(stage_freq)
+
+#visualize
+ggplot(stage_freq, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values on top
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = Freq), vjust = 0) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
+
+```
+
+
+
+#### Counts data
 
 View counts data from the RSE
 ```{r}
@@ -174,6 +240,7 @@ Last normalization step will be log-transformation of the TPM values
 
 --------------------
 --- my previous code ---
+```{r}
 #make a design matrix by genotype
 des  <- model.matrix(~meta_39$Genotype)
 
@@ -200,3 +267,4 @@ lm_res  <- topTreat(fit , coef=ncol(des ), sort.by = "logFC", number = nrow(fit 
 #data wrangle to prepare for othrologue mapping 
 lm_res <- tibble::rownames_to_column(lm_res, var = "Mouse.gene.stable.ID")
 return(lm_res)
+```
