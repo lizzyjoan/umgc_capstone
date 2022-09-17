@@ -10,6 +10,7 @@ load packages (note: for first time using a package, it first must be installed.
 library(recount3) #for accessing data
 library(dplyr) #great package for data wrangling
 library(ggplot2) #package for plotting
+library(ggfortify)
 ```
 
 View projects in recount3 
@@ -102,7 +103,7 @@ unique(brca_toptrt_meta$tcga.cgc_drug_therapy_drug_name)
 
 ```
 
-Stages of new subset
+Stages of new subset (patients treated with a top 10 most-freq used drug)
 ```{r}
 #what are the stages included?
 unique(brca_toptrt_meta$tcga.xml_stage_event_pathologic_stage)
@@ -117,8 +118,6 @@ ggplot(stage_freq, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values o
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
 
 ```
-
-
 
 #### Counts data
 
@@ -154,6 +153,77 @@ write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 
 write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
 ```
+
+
+###### PCA of subset  
+Pull counts for patients from top-treatment subset  
+```{r}
+toptrts_cts <- dplyr::select(brca_tpm, matches(row.names(brca_toptrt_meta)))
+
+#take top 10,000 most variable genes -- PCA is a hefty computational process, and looks at variation, so we can grab the top most variant genes in the first place which should give a good representation for using all genes for PCA, but also is much easier to run on local computers
+toptrts_cts_var <- apply(toptrts_cts, 1, IQR, na.rm = TRUE) #finds the interquartile range for each gene across samples; the 3rd qr - 1st qr. the greater the iqr, the more variability of  that gene across samples
+varying_genes <- toptrts_cts_var[order(toptrts_cts_var, decreasing = TRUE)]
+varying_genes <- names(varying_genes[1:10000])
+#narrow down tpm to just top var genes
+toptrts_cts_var_tpm <- toptrts_cts[rownames(toptrts_cts) %in% varying_genes,]
+
+```
+
+
+```{r}
+#combining counts and metadata for pca
+cts_t <- t(toptrts_cts_var_tpm)
+meta_cts <- cbind(cts_t, brca_toptrt_meta)
+toptrts_var_pca <- prcomp(meta_cts[1:10000], scale. = TRUE)
+summary(toptrts_var_pca)
+```
+
+
+```{r}
+# plotting
+toptrts_var_pca_plot <- autoplot(toptrts_var_pca,
+						data = meta_cts,
+						colour = 'tcga.cgc_case_prior_diagnosis',  x = 3, y = 4)
+
+toptrts_var_pca_plot
+
+```
+
+Save
+```{r}
+saveRDS(toptrts_pca, "./data/topfreq_drugs_pc.rds")
+
+```
+
+##### For each drug of the top drugs, what's the breakdown of stages?  
+
+Tamoxifen breakdown
+```{r}
+tamoxifen_set <- dplyr::filter(brca_toptrt_meta, tcga.cgc_drug_therapy_drug_name == "tamoxifen")
+
+#what are the stages included?
+unique(tamoxifen_set$tcga.xml_stage_event_pathologic_stage)
+#Frequency of treatments
+tamox_stage_freq <- as.data.frame(table(tamoxifen_set$tcga.xml_stage_event_pathologic_stage))
+View(tamox_stage_freq)
+
+#visualize
+ggplot(tamox_stage_freq, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values on top
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = Freq), vjust = 0) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
+
+#age range and stats
+summary(tamoxifen_set$tcga.cgc_case_age_at_diagnosis)
+
+#days to death stats
+summary(tamoxifen_set$tcga.xml_days_to_death)
+
+#histology types
+unique(tamoxifen_set$tcga.xml_histological_type)
+```
+
+
 
 ### GTEx  
 Looking at human_projects, find listing for GTEx breast data (just like done previously for TCGA BRCA)
