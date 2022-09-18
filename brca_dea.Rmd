@@ -11,6 +11,7 @@ library(recount3) #for accessing data
 library(dplyr) #great package for data wrangling
 library(ggplot2) #package for plotting
 library(ggfortify)
+library(limma)
 ```
 
 View projects in recount3 
@@ -154,7 +155,7 @@ write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
 ```
 
-
+##### Data Exploration
 ###### PCA of subset  
 Pull counts for patients from top-treatment subset  
 ```{r}
@@ -180,18 +181,34 @@ summary(toptrts_var_pca)
 
 
 ```{r}
-# plotting
+# plotting 
 toptrts_var_pca_plot <- autoplot(toptrts_var_pca,
 						data = meta_cts,
-						colour = 'tcga.cgc_case_prior_diagnosis',  x = 3, y = 4)
+						colour = 'tcga.gdc_cases.diagnoses.vital_status',  x = 11, y = 12)
 
 toptrts_var_pca_plot
-
 ```
 
 Save
 ```{r}
 saveRDS(toptrts_pca, "./data/topfreq_drugs_pc.rds")
+
+```
+
+#### Features related to survival  
+Area any of our explored features associated with survival?
+```{r}
+library(GGally)
+#brca_toptrt_meta$tcga.cgc_case_age_at_diagnosis
+GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.cgc_case_prior_diagnosis", "tcga.cgc_case_age_at_diagnosis"), title="Associations to Survival")
+
+GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.gdc_cases.demographic.race", "tcga.cgc_case_age_at_diagnosis"), title="Associations to Survival")
+
+GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.xml_stage_event_pathologic_stage", "tcga.cgc_drug_therapy_drug_name"), title="Associations to Survival")
+```
+
+```{r}
+#fit_1 <- lm(tcga.gdc_cases.diagnoses.vital_status ~ tcga.cgc_case_age_at_diagnosis, data = brca_toptrt_meta)
 
 ```
 
@@ -252,6 +269,24 @@ colnames(breast_metadata)
 unique(breast_metadata$gtex.age)
 ```
 
+Analyze metadata
+```{r}
+#Frequency of ages
+ctl_age_freq <- as.data.frame(table(breast_metadata$gtex.age))
+View(ctl_age_freq)
+
+ctl_rin_freq <- as.data.frame(table(breast_metadata$gtex.smrin))
+View(ctl_rin_freq)
+
+top_trts <- dplyr::slice_max(trt_freq, order_by = Freq, n = 15)
+
+ggplot(top_trts, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values on top
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = Freq), vjust = 0) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
+
+
+```
 
 View counts data from the RSE
 ```{r}
@@ -293,48 +328,51 @@ Random subset of first 10 samples for practice run through
 ```{r}
 brca_test <- brca_tpm[,1:10]
 ctl_test <- breast_tpm[,1:10]
-#brca_test_meta <- 
+cts_test <- cbind(brca_test, ctl_test)
 ```
 
-Make new metadata, control vs tumor
+Make new metadata, control vs tumor (can add in other features here to be used as covariates, i.e. age, race, etc.)
 ```{r}
 lm_meta <- data.frame("Samples" = c(colnames(brca_test), colnames(ctl_test)), Condition = c(rep("Tumor", length(brca_test)), rep("Control", length(ctl_test))))
 
 ```
 
-Last normalization step will be log-transformation of the TPM values
+Make a design matrix
 ```{r}
-
+des <- model.matrix(~lm_meta$Condition)
 
 ```
 
---------------------
---- my previous code ---
+Filtering out genes with zero variance
 ```{r}
-#make a design matrix by genotype
-des  <- model.matrix(~meta_39$Genotype)
-
 #makes object for convenient use
-dge  <- DGEList(counts=cts_39 )
+dge  <- edgeR::DGEList(counts=cts_test)
 #remove genes consistently zero or very low
-keep  <- filterByExpr(dge , design = des )
+keep  <- edgeR::filterByExpr(dge , design = des)
 dge  <- dge[keep ,,keep.lib.sizes=FALSE]
 
-#TMM normalization method
-dge  <- calcNormFactors(dge )
-#convert counts to  log2-counts-per-million (logCPM), prior.count used as avg count to be added to each obs to avoid taking log of zero 
-logCPM  <- cpm(dge , log=TRUE, prior.count=3)
+```
 
-#linear model and use emperical bayes prior trend to model mean-variance relationship
-fit  <- lmFit(logCPM , des )
-
+"When the library sizes are quite variable between samples, then the voom approach is theoretically more powerful than limma-trend. In this approach, the voom transformation is applied to the normalized and filtered DGEList object:"
+```{r}
+v <- limma::voom(dge, des, plot=TRUE)
+#The voom transformation uses the experiment design matrix, and produces an EList object.
+#It is also possible to give a matrix of counts directly to voom without TMM normalization, by
+v2 <- limma::voom(cts_test, des, plot=TRUE)
+#If the data are very noisy, one can apply the same between-array normalization methods as would be used for microarrays, for example:
+v3 <- limma::voom(cts_test, des, plot=TRUE, normalize="quantile")
+#After this, the usual limma pipelines for differential expression can be applied, for example:
+fit <- limma::lmFit(v, des)
+fit <- limma::eBayes(fit)
+limma::topTable(fit, coef=ncol(des))
+```
+Filtering results
+```{r}
 #absolute log2fc > 2
-fit  <- limma::treat(fit , fc = 1.2, trend=TRUE)
+#fit  <- limma::treat(fit , fc = 1.2, trend=TRUE)
 
 #compute BH p-adjusted values, only values meeting 0.05 cutoff, avg expression, and all in nice table like top 10
-lm_res  <- topTreat(fit , coef=ncol(des ), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
+#lm_res  <- topTreat(fit , coef=ncol(des ), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
 
-#data wrangle to prepare for othrologue mapping 
-lm_res <- tibble::rownames_to_column(lm_res, var = "Mouse.gene.stable.ID")
-return(lm_res)
+
 ```
