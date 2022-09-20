@@ -12,6 +12,7 @@ library(dplyr) #great package for data wrangling
 library(ggplot2) #package for plotting
 library(ggfortify)
 library(limma)
+library(edgeR)
 ```
 
 View projects in recount3 
@@ -191,7 +192,7 @@ toptrts_var_pca_plot
 
 Save
 ```{r}
-saveRDS(toptrts_pca, "./data/topfreq_drugs_pc.rds")
+saveRDS(toptrts_var_pca, "./data/topfreq_drugs_pc.rds")
 
 ```
 
@@ -361,6 +362,26 @@ v <- limma::voom(dge, des, plot=TRUE)
 v2 <- limma::voom(cts_test, des, plot=TRUE)
 #If the data are very noisy, one can apply the same between-array normalization methods as would be used for microarrays, for example:
 v3 <- limma::voom(cts_test, des, plot=TRUE, normalize="quantile")
+
+# do the split on v
+
+fractionTraining   <- 0.80
+fractionTest       <- 0.20
+
+# Compute sample sizes.
+sampleSizeTraining   <- floor(fractionTraining   * nrow(v))
+sampleSizeTest       <- floor(fractionTest       * nrow(v))
+
+# Create the randomly-sampled indices for the dataframe. Use setdiff() to
+# avoid overlapping subsets of indices.
+indicesTraining    <- sort(sample(seq_len(nrow(v)), size=sampleSizeTraining))
+indicesNotTraining <- setdiff(seq_len(nrow(v)), indicesTraining)
+indicesTest  <- sort(sample(indicesNotTraining, size=sampleSizeTest))
+
+# Finally, output the two dataframes for training, validation and test.
+vTraining   <- v[indicesTraining, ]
+vTest       <- v[indicesTest, ]
+
 #After this, the usual limma pipelines for differential expression can be applied, for example:
 fit <- limma::lmFit(v, des)
 fit <- limma::eBayes(fit)
