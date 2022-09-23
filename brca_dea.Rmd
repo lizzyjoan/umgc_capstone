@@ -185,7 +185,7 @@ summary(toptrts_var_pca)
 # plotting 
 toptrts_var_pca_plot <- autoplot(toptrts_var_pca,
 						data = meta_cts,
-						colour = 'tcga.gdc_cases.diagnoses.vital_status',  x = 11, y = 12)
+						colour = 'tcga.cgc_case_pathologic_stage',  x = 1, y = 2) 
 
 toptrts_var_pca_plot
 ```
@@ -203,7 +203,7 @@ library(GGally)
 #brca_toptrt_meta$tcga.cgc_case_age_at_diagnosis
 GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.cgc_case_prior_diagnosis", "tcga.cgc_case_age_at_diagnosis"), title="Associations to Survival")
 
-GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.gdc_cases.demographic.race", "tcga.cgc_case_age_at_diagnosis"), title="Associations to Survival")
+GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.cgc_case_pathologic_stage"), title="Associations to Survival")
 
 GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.xml_stage_event_pathologic_stage", "tcga.cgc_drug_therapy_drug_name"), title="Associations to Survival")
 ```
@@ -240,7 +240,6 @@ summary(tamoxifen_set$tcga.xml_days_to_death)
 #histology types
 unique(tamoxifen_set$tcga.xml_histological_type)
 ```
-
 
 
 ### GTEx  
