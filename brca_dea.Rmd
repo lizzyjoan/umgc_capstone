@@ -13,12 +13,15 @@ library(ggplot2) #package for plotting
 library(ggfortify)
 library(limma)
 library(edgeR)
+library(biomaRt)
+library(GEOquery)
+library(caret)
 ```
 
 View projects in recount3 
 ```{r}
 human_projects<- available_projects()
-View(human_projects)
+#View(human_projects)
 ```
 recount3 enables creating RangedSummarizedExperiment objects that contain expression quantitative data ([Figure 2](https://www.bioconductor.org/packages/devel/bioc/vignettes/recount3/inst/doc/recount3-quickstart.html) ). As a quick overview, some of the main terms are:  
 __rse:__ a RangedSummarizedExperiment object from SummarizedExperiment (Morgan, Obenchain, Hester, and Pagès, 2019) that contains:  
@@ -68,7 +71,7 @@ brca_drug_meta <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_drug_therapy_dr
 
 #Frequency of treatments
 trt_freq <- as.data.frame(table(brca_drug_meta$tcga.cgc_drug_therapy_drug_name))
-View(trt_freq)
+#View(trt_freq)
 ```
 
 look at table--note the different counts for some drugs like "doxorubicin" "Doxorubicin""DOXORUBICIN" ... we need to make all lowercase 
@@ -144,7 +147,7 @@ Data wrangling -- make counts into dataframe, then subset for the samples that a
 ```{r}
 brca_tpm <- as.data.frame(brca_data@assays@data@listData$TPM)
 
-brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_primary_metadata)))
+brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_drug_meta)))
 ```
 
 
@@ -154,6 +157,14 @@ Save subsetted BRCA counts and metadata
 write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 
 write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
+```
+
+Read back in
+```{r}
+brca_primary_metadata <- read.csv("./data/brca_primarytumor_metadata.csv")
+
+#brca_tpm <- read.csv("./data/brca_primarytumor_tpm_expdata.csv")
+
 ```
 
 ##### Data Exploration
@@ -331,22 +342,31 @@ ctl_test <- breast_tpm[,1:10]
 cts_test <- cbind(brca_test, ctl_test)
 ```
 
+Survivor subset and non-survivor subset
+```{r}
+alive_meta <- dplyr::filter(brca_drug_meta, tcga.gdc_cases.diagnoses.vital_status == "alive")
+
+dead_meta <- dplyr::filter(brca_drug_meta, tcga.gdc_cases.diagnoses.vital_status == "dead")
+```
+
 Make new metadata, control vs tumor (can add in other features here to be used as covariates, i.e. age, race, etc.)
 ```{r}
-lm_meta <- data.frame("Samples" = c(colnames(brca_test), colnames(ctl_test)), Condition = c(rep("Tumor", length(brca_test)), rep("Control", length(ctl_test))))
+lm_meta <- data.frame("Samples" = c(colnames(brca_drug_meta), colnames(ctl_test)), Condition = c(rep("Tumor", length(brca_test)), rep("Control", length(ctl_test))))
 
 ```
 
 Make a design matrix
 ```{r}
-des <- model.matrix(~lm_meta$Condition)
+brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- as.factor(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
+brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- relevel(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status, 'alive') #reorder to make 'alive' the reference
 
+des <- model.matrix(~brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
 ```
 
 Filtering out genes with zero variance
 ```{r}
 #makes object for convenient use
-dge  <- edgeR::DGEList(counts=cts_test)
+dge  <- edgeR::DGEList(counts=brca_tpm)
 #remove genes consistently zero or very low
 keep  <- edgeR::filterByExpr(dge , design = des)
 dge  <- dge[keep ,,keep.lib.sizes=FALSE]
@@ -358,9 +378,9 @@ dge  <- dge[keep ,,keep.lib.sizes=FALSE]
 v <- limma::voom(dge, des, plot=TRUE)
 #The voom transformation uses the experiment design matrix, and produces an EList object.
 #It is also possible to give a matrix of counts directly to voom without TMM normalization, by
-v2 <- limma::voom(cts_test, des, plot=TRUE)
+#v2 <- limma::voom(cts_test, des, plot=TRUE)
 #If the data are very noisy, one can apply the same between-array normalization methods as would be used for microarrays, for example:
-v3 <- limma::voom(cts_test, des, plot=TRUE, normalize="quantile")
+#v3 <- limma::voom(cts_test, des, plot=TRUE, normalize="quantile")
 
 # do the split on v
 
@@ -383,16 +403,165 @@ vTest       <- v[indicesTest, ]
 
 #After this, the usual limma pipelines for differential expression can be applied, for example:
 fit <- limma::lmFit(v, des)
-fit <- limma::eBayes(fit)
-limma::topTable(fit, coef=ncol(des))
+#fit <- limma::eBayes(fit)
+#limma::topTable(fit, coef=ncol(des))
 ```
+
 Filtering results
 ```{r}
 #absolute log2fc > 2
-#fit  <- limma::treat(fit , fc = 1.2, trend=TRUE)
+#lmres  <- limma::treat(fit , fc = 0.5, trend=TRUE)
+lmres <- limma::eBayes(fit)
 
 #compute BH p-adjusted values, only values meeting 0.05 cutoff, avg expression, and all in nice table like top 10
-#lm_res  <- topTreat(fit , coef=ncol(des ), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
+#lmres  <- topTreat(lmres , coef=ncol(des), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
+tfit <- treat(lmres, fc=1.1)
+t <- topTreat(tfit,coef=2, number = 50)
+
+summary(tfit)
+```
+
+
+```{r}
+brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- as.factor(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
+#print(rownames(metadata))
+#print(colnames(cts))
+library(DESeq2)
+cts <- as.data.frame(round(assay(brca_data, "counts")))
+cts <- dplyr::select(cts, matches(row.names(brca_drug_meta)))
+
+cts <- dplyr::select(cts, matches(row.names(brca_drug_meta)))
+
+dds <- DESeqDataSetFromMatrix(cts, brca_drug_meta, design = ~ tcga.gdc_cases.diagnoses.vital_status)
+
+```
+
+```{r}
+dds_res <- DESeq(dds) 
+
+#lists the coefficients
+resultsNames(dds)
+
+#log fold shrinkage to adjust for very lowly expressed genes that change just a little bit, helps to remove weird small changes in pseudogenes/lncRNAs/etc
+#dds_lfc <- lfcShrink(dds_res, coef = c("Genotype_Pkd2flflPax8rtTATetOcre_vs_Wildtype"), type="apeglm")
+
+
+#NAs removed first
+#res <- res[!is.na(dds_lfc$padj),]
+
+#p-adjusted value cutoff 0.05 and log2fc greater than 2.0 and less than -2.0 
+upgenes <- res[res$log2FoldChange > 1.1 & res$padj < 0.05,]
+
+```
+
+### Gene conversion  
+Adapted from https://cafernandezlo.github.io/es_fic_mubics_caret/caret.html#Caret 
+```{r}
+
+
+brca_tpm <- as.data.frame((brca_data@assays@data@listData$TPM))
+temp <- tibble::rownames_to_column(brca_tpm, var = "gene")
+temp$gene <- gsub("\\..*", "", temp$gene)
+#gene_ref <- unique(gsub("\\..*", "", rownames(brca_tpm)))
+
+mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", mirror = "useast")
+gene_desc <- getBM(filters = "ensembl_gene_id", attributes = c("ensembl_gene_id","gene_biotype", "hgnc_symbol"), values = temp$gene, mart = mart)
+
+#mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+#convert <- getBM(filters= c('ensembl_gene_id'), 
+#                 attributes= c('ensembl_gene_id', 'gene_biotype', 'hgnc_symbol'),
+#                 values=gene_ref,
+#                 mart= mart)
+protCod = convert[which(gene_desc$gene_biotype == 'protein_coding'), ]
+protCodIDs = protCod$ensembl_gene_id
+#brca.omics = temp[, match(protCodIDs, temp$gene)]
+
+brca_cts <- dplyr::filter(temp, gene %in% protCodIDs)
+brca_cts <- merge(brca_cts, gene_desc, by.x = "gene", by.y = "ensembl_gene_id")
+brca_cts <- dplyr::distinct(brca_cts, hgnc_symbol, .keep_all = TRUE)
+
+#Convert back to rownames but with gene symbols
+brca_cts <- tibble:::column_to_rownames(brca_cts, "hgnc_symbol")
+
+#get rid of extra gene id columns
+brca_cts <- subset(brca_cts, select=-c(gene, gene_biotype))
 
 
 ```
+
+### Data processing
+Scale TPM counts (should give a mean around 0 and std dev 1)
+```{r}
+brca_scaled <- as.data.frame(scale(t(brca_cts)))
+
+brca_primary_metadata$tcga.cgc_case_vital_status <- as.factor(brca_primary_metadata$tcga.cgc_case_vital_status)
+
+brca_scaled <- dplyr::filter(brca_scaled, row.names(brca_scaled) %in%  row.names(brca_primary_metadata) )
+#t <- dplyr::intersect(brca_scaled, brca_primary_metadata$tcga.cgc_case_vital_status)
+brca_scaled$output <- brca_primary_metadata$tcga.cgc_case_vital_status #brca_primary_metadata[match(row.names(brca_scaled),row.names(brca_primary_metadata)),"tcga.cgc_case_vital_status"]
+#brca_scaled <- brca_scaled %>% tidyr::drop_na(tcga.cgc_case_vital_status)
+```
+
+
+training/test split
+```{r}
+
+set.seed(23)
+
+train <- caret::createDataPartition(y = brca_scaled$output, p = 0.8, list = FALSE, times = 1)
+brca.data_train <- brca_scaled[train, ]
+brca.data_test  <- brca_scaled[-train, ]
+
+```
+
+remove near zero variance genes
+```{r}
+nzv <- nearZeroVar(brca_scaled)
+brca_cts_nzv <- brca_scaled[,-nzv]
+```
+
+if needed, can also come back to this spot to remove extra correlations (under 'preprocessing' https://cafernandezlo.github.io/es_fic_mubics_caret/caret.html#Caret )
+
+### Random Forest  
+parallel, hyperperameters
+```{r}
+library(doParallel)
+
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+cv.k  <- 10
+reps <- 5
+
+hyperparameters <- expand.grid(mtry = c(3, 5, 7),
+                               min.node.size = c(2, 4, 6),
+                               splitrule = "gini")
+
+set.seed(1234)
+#seeds <- vector(mode = "list", length = (cv.k * reps) + 6)
+#for (i in 1:(cv.k * reps)) {
+#  seeds[[i]] <- sample.int(1000, nrow(hyperparameters))
+#}
+#seeds[[(cv.k * reps) + 6]] <- sample.int(1000, 1)
+
+train.control <- trainControl(method = "repeatedcv", number = cv.k,
+                              repeats = reps, #seeds = seeds,
+                              returnResamp = "final", verboseIter = TRUE,
+          allowParallel = TRUE)
+```
+
+model
+```{r}
+set.seed(5678)
+rf.model <- train(x = brca.data_train[,-ncol(brca.data_train)],
+                  y= brca.data_train$output,
+                  method = "ranger",
+                  tuneGrid = hyperparameters,
+                  metric = "Accuracy",
+                  importance= 'impurity',
+                  trControl = train.control,
+                  num.trees = 500)
+
+```
+
+
