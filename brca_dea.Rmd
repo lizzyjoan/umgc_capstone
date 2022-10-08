@@ -20,7 +20,7 @@ library(caret)
 
 View projects in recount3 
 ```{r}
-human_projects<- available_projects()
+#human_projects<- available_projects()
 #View(human_projects)
 ```
 recount3 enables creating RangedSummarizedExperiment objects that contain expression quantitative data ([Figure 2](https://www.bioconductor.org/packages/devel/bioc/vignettes/recount3/inst/doc/recount3-quickstart.html) ). As a quick overview, some of the main terms are:  
@@ -51,11 +51,11 @@ str(brca_data)
 (take a good look at this - there's tons of metadata... we can include these things as covariates, decide to exclude samples based on certain criteria here, and/or make plots for some of these... there's morphology, tumor classification, patient ethnicity, age, days to death, treatments, clinical stage, pregnancies, and so much more)
 ```{r}
 brca_metadata <- as.data.frame(colData(brca_data))
-View(brca_metadata)
+#View(brca_metadata)
 #what are all the available sample types?
-unique(brca_metadata$tcga.cgc_sample_sample_type)
+#unique(brca_metadata$tcga.cgc_sample_sample_type)
 #what are the ages at diagnosis?
-summary(brca_metadata$tcga.cgc_case_age_at_diagnosis) 
+#summary(brca_metadata$tcga.cgc_case_age_at_diagnosis) 
 ```
 
 
@@ -63,6 +63,10 @@ Let's focus on just Primary Tumors (metastastic ones are extra weird, and the so
 ```{r}
 #filter for primary tumors
 brca_primary_metadata <- dplyr::filter(brca_metadata, tcga.cgc_sample_sample_type == "Primary Tumor") #dplyr:: is just to say that I want to use the 'filter' function from the 'dplyr' package -- helps keep R from getting confused about using the 'filter' function from another package or base R 
+
+#remove patients with missing vital data
+brca_primary_metadata <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_case_vital_status)
+
 ```
 
 Subset for patients with drug treatment data, count frequencies of each
@@ -147,21 +151,21 @@ Data wrangling -- make counts into dataframe, then subset for the samples that a
 ```{r}
 brca_tpm <- as.data.frame(brca_data@assays@data@listData$TPM)
 
-brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_drug_meta)))
+#brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_drug_meta)))
 ```
 
 
 Save subsetted BRCA counts and metadata
 ```{r}
 #please note-- to save to this filepath, you need a 'data' folder where ever your current working directory is (you can find out your working directory with getwd() ) so you can either change this filepath or create a 'data' folder in your current working directory
-write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
+#write.csv(brca_primary_metadata, "./data/brca_primarytumor_metadata.csv")
 
-write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
+#write.csv(brca_tpm, "./data/brca_primarytumor_tpm_expdata.csv")
 ```
 
 Read back in
 ```{r}
-brca_primary_metadata <- read.csv("./data/brca_primarytumor_metadata.csv")
+brca_primary_metadata <- read.csv("./data/brca_primarytumor_metadata.csv", row.names = 1)
 
 #brca_tpm <- read.csv("./data/brca_primarytumor_tpm_expdata.csv")
 
@@ -203,7 +207,7 @@ toptrts_var_pca_plot
 
 Save
 ```{r}
-saveRDS(toptrts_var_pca, "./data/topfreq_drugs_pc.rds")
+#saveRDS(toptrts_var_pca, "./data/topfreq_drugs_pc.rds")
 
 ```
 
@@ -252,84 +256,6 @@ summary(tamoxifen_set$tcga.xml_days_to_death)
 unique(tamoxifen_set$tcga.xml_histological_type)
 ```
 
-
-### GTEx  
-Looking at human_projects, find listing for GTEx breast data (just like done previously for TCGA BRCA)
-```{r}
-breast_data <- recount3::create_rse_manual(
-    project = "BREAST",
-    project_home = "data_sources/gtex",
-    organism = "human",
-    annotation = "gencode_v26",
-    type = "gene")
-
-```
-
-Look at structure of rse object
-```{r}
-str(breast_data)
-```
-
-Explore metadata. We need to keep in mind the balance of data (for example, 'summary' of sex looks like it's almost half male/female, while the TCGA BRCA samples were almost all females. Also need to be aware of difference in reporting -- age for brca_metadata$tcga.cgc_case_age_at_diagnosis is exact age, and age for GTEx looks like it's in decade age ranges, i.e. 20-29, 30-39, etc )
-```{r}
-breast_metadata <- as.data.frame(colData(breast_data))
-View(breast_metadata)
-#all metadata columns
-colnames(breast_metadata)
-#what are all the available sample types?
-unique(breast_metadata$gtex.age)
-```
-
-Analyze metadata
-```{r}
-#Frequency of ages
-ctl_age_freq <- as.data.frame(table(breast_metadata$gtex.age))
-View(ctl_age_freq)
-
-ctl_rin_freq <- as.data.frame(table(breast_metadata$gtex.smrin))
-View(ctl_rin_freq)
-
-top_trts <- dplyr::slice_max(trt_freq, order_by = Freq, n = 15)
-
-ggplot(top_trts, aes(x = Var1, y = Freq, fill = Var1)) +  # Plot with values on top
-  geom_bar(stat = "identity") + 
-  geom_text(aes(label = Freq), vjust = 0) +
-  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
-
-
-```
-
-View counts data from the RSE
-```{r}
-str(assays(breast_data))
-```
-
-
-Now generate Transcripts Per Million (TPM) from counts data
-```{r}
-#first, scale the raw counts
-assay(breast_data, "counts") <- transform_counts(breast_data)
-#calculate TPM
-assays(breast_data)$TPM <- recount::getTPM(breast_data, length_var = "bp_length")
-#view the counts data -- section for 'TPM' now
-str(breast_data@assays@data@listData)
-```
-
-
-Data wrangling -- make counts into dataframe 
-```{r}
-breast_tpm <- as.data.frame(breast_data@assays@data@listData$TPM)
-
-```
-
-
-Save subsetted BRCA counts and metadata
-```{r}
-#please note-- to save to this filepath, you need a 'data' folder where ever your current working directory is (you can find out your working directory with getwd() ) so you can either change this filepath or create a 'data' folder in your current working directory
-write.csv(breast_metadata, "./data/breast_healthy_metadata.csv")
-
-write.csv(breast_tpm, "./data/breast_healthy_tpm_expdata.csv")
-```
 
 ### Differential Expression Analysis  
 LIMMA is a linear model with empirical bayes for finding differentially expressed genes.
@@ -457,8 +383,6 @@ upgenes <- res[res$log2FoldChange > 1.1 & res$padj < 0.05,]
 ### Gene conversion  
 Adapted from https://cafernandezlo.github.io/es_fic_mubics_caret/caret.html#Caret 
 ```{r}
-
-
 brca_tpm <- as.data.frame((brca_data@assays@data@listData$TPM))
 temp <- tibble::rownames_to_column(brca_tpm, var = "gene")
 temp$gene <- gsub("\\..*", "", temp$gene)
@@ -467,17 +391,17 @@ temp$gene <- gsub("\\..*", "", temp$gene)
 mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", mirror = "useast")
 gene_desc <- getBM(filters = "ensembl_gene_id", attributes = c("ensembl_gene_id","gene_biotype", "hgnc_symbol"), values = temp$gene, mart = mart)
 
-#mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
-#convert <- getBM(filters= c('ensembl_gene_id'), 
-#                 attributes= c('ensembl_gene_id', 'gene_biotype', 'hgnc_symbol'),
-#                 values=gene_ref,
-#                 mart= mart)
-protCod = convert[which(gene_desc$gene_biotype == 'protein_coding'), ]
+#find all protein-coding genes
+protCod = gene_desc[which(gene_desc$gene_biotype == 'protein_coding'), ]
 protCodIDs = protCod$ensembl_gene_id
-#brca.omics = temp[, match(protCodIDs, temp$gene)]
 
+#filter for protein-coding genes
 brca_cts <- dplyr::filter(temp, gene %in% protCodIDs)
+
+#merge count data and gene conversion table
 brca_cts <- merge(brca_cts, gene_desc, by.x = "gene", by.y = "ensembl_gene_id")
+
+#remove duplicate gene symbols
 brca_cts <- dplyr::distinct(brca_cts, hgnc_symbol, .keep_all = TRUE)
 
 #Convert back to rownames but with gene symbols
@@ -486,43 +410,71 @@ brca_cts <- tibble:::column_to_rownames(brca_cts, "hgnc_symbol")
 #get rid of extra gene id columns
 brca_cts <- subset(brca_cts, select=-c(gene, gene_biotype))
 
-
 ```
 
 ### Data processing
 Scale TPM counts (should give a mean around 0 and std dev 1)
 ```{r}
 brca_scaled <- as.data.frame(scale(t(brca_cts)))
+```
 
+combine scaled counts to vital status data
+```{r}
 brca_primary_metadata$tcga.cgc_case_vital_status <- as.factor(brca_primary_metadata$tcga.cgc_case_vital_status)
 
 brca_scaled <- dplyr::filter(brca_scaled, row.names(brca_scaled) %in%  row.names(brca_primary_metadata) )
-#t <- dplyr::intersect(brca_scaled, brca_primary_metadata$tcga.cgc_case_vital_status)
-brca_scaled$output <- brca_primary_metadata$tcga.cgc_case_vital_status #brca_primary_metadata[match(row.names(brca_scaled),row.names(brca_primary_metadata)),"tcga.cgc_case_vital_status"]
-#brca_scaled <- brca_scaled %>% tidyr::drop_na(tcga.cgc_case_vital_status)
+
+brca_scaled$output <- brca_primary_metadata$tcga.cgc_case_vital_status 
+
 ```
+
+remove near zero variance features
+```{r}
+nzv <- nearZeroVar(brca_scaled)
+brca_cts.nzv <- brca_scaled[,-nzv]
+
+```
+
+"Most of the models may benefit from reducing the level of correlation between features. More correlation does not imply more information and, on the other hand, likely imply more noise. Caret has a findCorrelation() function for this task."
+
+https://cafernandezlo.github.io/es_fic_mubics_caret/caret.html#Caret )
+
+```{r}
+output <- brca_cts.nzv %>% dplyr::select('output')
+data <- brca_cts.nzv[,setdiff(colnames(brca_cts.nzv),'output')]
+high.cor <- findCorrelation(data, cutoff = .75)
+
+brca.data.nzv.cor <- brca_cts.nzv[,-high.cor]
+#brca.data.nzv.cor$output <- output
+# check cutoff 
+
+#We will keep the final set of genes as the ones of interest so we must keep them too in the train and test datasets:
+
+
+#brca.data_train <- brca.data_train %>% #dplyr::select(names(brca.data.nzv.cor))
+#brca.data_test <- brca.data_test %>% dplyr::select(names(brca.data.nzv.cor))
+```
+
 
 
 training/test split
 ```{r}
-
 set.seed(23)
 
-train <- caret::createDataPartition(y = brca_scaled$output, p = 0.8, list = FALSE, times = 1)
-brca.data_train <- brca_scaled[train, ]
-brca.data_test  <- brca_scaled[-train, ]
+train <- caret::createDataPartition(y = brca.data.nzv.cor$output, p = 0.8, list = FALSE, times = 1)
+brca.data_train <- brca.data.nzv.cor[train, ]
+brca.data_test  <- brca.data.nzv.cor[-train, ]
+
+#futher remove NAs??
+#brca.data_train <- as.data.frame(t(brca.data_train))
+#brca.data_train <- drop_na(brca.data_train)
+#brca.data_train <- as.data.frame(t(brca.data_train))
 
 ```
 
-remove near zero variance genes
-```{r}
-nzv <- nearZeroVar(brca_scaled)
-brca_cts_nzv <- brca_scaled[,-nzv]
-```
 
-if needed, can also come back to this spot to remove extra correlations (under 'preprocessing' https://cafernandezlo.github.io/es_fic_mubics_caret/caret.html#Caret )
 
-### Random Forest  
+### Caret Random Forest  
 parallel, hyperperameters
 ```{r}
 library(doParallel)
@@ -530,7 +482,7 @@ library(doParallel)
 cl <- makePSOCKcluster(3)
 registerDoParallel(cl)
 
-cv.k  <- 10
+#cv.k  <- 10
 reps <- 5
 
 hyperparameters <- expand.grid(mtry = c(3, 5, 7),
@@ -544,16 +496,13 @@ set.seed(1234)
 #}
 #seeds[[(cv.k * reps) + 6]] <- sample.int(1000, 1)
 
-train.control <- trainControl(method = "repeatedcv", number = cv.k,
-                              repeats = reps, #seeds = seeds,
-                              returnResamp = "final", verboseIter = TRUE,
-          allowParallel = TRUE)
+train.control <- trainControl(method = "repeatedcv", number = 5, repeats = reps, returnResamp = "final", verboseIter = TRUE, allowParallel = TRUE)
 ```
 
 model
 ```{r}
 set.seed(5678)
-rf.model <- train(x = brca.data_train[,-ncol(brca.data_train)],
+rf.model <- caret::train(x = brca.data_train[,-ncol(brca.data_train)],
                   y= brca.data_train$output,
                   method = "ranger",
                   tuneGrid = hyperparameters,
@@ -564,4 +513,105 @@ rf.model <- train(x = brca.data_train[,-ncol(brca.data_train)],
 
 ```
 
+```{r}
+rf.model
 
+rf.model$finalModel
+
+
+ggplot(rf.model, highlight = TRUE) +
+  scale_x_continuous(breaks = 1:30) +
+  labs(title = "RF",subtitle = "Accuracy") +
+  guides(color = guide_legend(title = "mtry"),
+         shape = guide_legend(title = "mtry")) +
+  theme_bw()
+
+```
+
+most important genes in model
+```{r}
+importance.rf <- varImp(rf.model,scale = TRUE)
+plot(importance.rf, main = 'RF (ranger). Gene importance',top=20)
+
+```
+
+
+#### Caret LDA
+
+```{r}
+set.seed(5678)
+lda.model <- train(output ~ ., data = brca.data_train,
+                   method = "lda",
+                   metric = "Accuracy",
+                   trControl = train.control)
+```
+
+```{r}
+lda.model
+
+lda.model$finalModel
+```
+
+
+#### Compare Models
+```{r}
+results <- list(RF=rf.model, LDA=lda.model)
+resam.results <- resamples(results)
+resam.results$values %>% head()
+```
+
+```{r}
+bwplot(resam.results)
+```
+
+```{r}
+xyplot(resam.results, metric = "Accuracy")
+```
+
+```{r}
+dotplot(resam.results, metric = "Accuracy")
+```
+
+look for outlier folds
+```{r}
+densityplot(resam.results, metric = "Accuracy")
+```
+
+extract predictions
+```{r}
+preds.results <- extractPrediction(
+                  models = results,
+                  testX = brca.data_test %>% dplyr::select(-output),
+                  testY = brca.data_test$output
+                )
+```
+
+```{r}
+preds.scores <- preds.results %>%
+                         mutate(success = ifelse(obs == pred, TRUE, FALSE)) %>%
+                         group_by(object, dataType) %>%
+                         summarise(accuracy = mean(success))
+
+preds.scores %>%
+  tidyr::spread(key = dataType, value = accuracy) %>%
+  arrange(desc(Test))
+
+```
+
+```{r}
+ggplot(data = preds.scores,
+       aes(x = reorder(object, accuracy), y = accuracy,
+           color = dataType, label = round(accuracy, 2))) +
+  geom_point(size = 10,shape=18) +
+  geom_text(color = "white", size = 3) +
+  scale_y_continuous(limits = c(0.5, 1)) +
+  coord_flip() +
+  labs(title = "Accuracy",
+       subtitle = "Train and test",
+       x = element_blank(),
+       y = 'Performance') +
+  theme_bw() + 
+  theme(legend.position = "bottom",
+        legend.title = element_blank())
+
+```
