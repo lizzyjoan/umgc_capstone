@@ -65,7 +65,35 @@ Let's focus on just Primary Tumors (metastastic ones are extra weird, and the so
 brca_primary_metadata <- dplyr::filter(brca_metadata, tcga.cgc_sample_sample_type == "Primary Tumor") #dplyr:: is just to say that I want to use the 'filter' function from the 'dplyr' package -- helps keep R from getting confused about using the 'filter' function from another package or base R 
 
 #remove patients with missing vital data
-brca_primary_metadata <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_case_vital_status)
+brca_primary_metadata <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_case_vital_status) #1117 samples
+
+```
+
+
+```{r}
+library(magrittr)
+#remove patients with missing drug data
+brca_primary_metadata <- tidyr::drop_na(brca_primary_metadata, tcga.cgc_drug_therapy_drug_name) #763
+brca_primary_metadata$tcga.cgc_drug_therapy_drug_name <- tolower(brca_primary_metadata$tcga.cgc_drug_therapy_drug_name)
+
+brca_drugs_binned <- brca_primary_metadata$tcga.cgc_drug_therapy_drug_name
+
+brca_drugs_binned <- sub("anastrozole|anastrozolum|anastrazole", "arimidex", brca_drugs_binned)
+brca_drugs_binned <- sub("nolvadex", "tamoxifen", brca_drugs_binned)
+brca_drugs_binned <- sub("paclitaxelum|taxol", "paclitaxel", brca_drugs_binned)
+brca_drugs_binned <- sub("5 fluorouracil|5-fluorouracil|5-flourouracil", "fluorouracil", brca_drugs_binned)
+brca_drugs_binned <- sub("doxorubicin hcl|doxorubicinum|doxorubicine|adriamycin|adriamycin|adriamyicin|adrimycin", "doxorubicin", brca_drugs_binned)
+brca_drugs_binned <- sub("cyotxan|cyotxan|doxorubicine", "cytoxan", brca_drugs_binned)
+brca_drugs_binned <- sub("aromatase exemestane|aromasin (exemestane)|aromasin", "exemestane", brca_drugs_binned)
+brca_drugs_binned <- sub("letrozole (femara)|femara|letrozol", "letrozole", brca_drugs_binned)
+
+#make new column in metadata
+brca_primary_metadata$brca_drugs_binned <- brca_drugs_binned
+
+#plot, comparing live vs dead
+ggplot(data = brca_primary_metadata, aes(x = brca_drugs_binned, y = ..count.., fill = tcga.cgc_case_vital_status)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1))
 
 ```
 
