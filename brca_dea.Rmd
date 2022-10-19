@@ -59,6 +59,11 @@ brca_metadata <- as.data.frame(colData(brca_data))
 ```
 
 
+```{r}
+write.csv(brca_metadata, file = "tcga_brca_metadata.csv")
+
+```
+
 Let's focus on just Primary Tumors (metastastic ones are extra weird, and the solid tissue normal has been shown to not very 'normal' in previous studies)
 ```{r}
 #filter for primary tumors
@@ -179,7 +184,7 @@ Data wrangling -- make counts into dataframe, then subset for the samples that a
 ```{r}
 brca_tpm <- as.data.frame(brca_data@assays@data@listData$TPM)
 
-#brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_drug_meta)))
+brca_tpm <- dplyr::select(brca_tpm, matches(row.names(brca_primary_metadata)))
 ```
 
 
@@ -251,13 +256,8 @@ GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vita
 GGally::ggpairs(data=brca_toptrt_meta, columns= c("tcga.gdc_cases.diagnoses.vital_status", "tcga.xml_stage_event_pathologic_stage", "tcga.cgc_drug_therapy_drug_name"), title="Associations to Survival")
 ```
 
-```{r}
-#fit_1 <- lm(tcga.gdc_cases.diagnoses.vital_status ~ tcga.cgc_case_age_at_diagnosis, data = brca_toptrt_meta)
-
-```
 
 ##### For each drug of the top drugs, what's the breakdown of stages?  
-
 Tamoxifen breakdown
 ```{r}
 tamoxifen_set <- dplyr::filter(brca_toptrt_meta, tcga.cgc_drug_therapy_drug_name == "tamoxifen")
@@ -296,29 +296,19 @@ ctl_test <- breast_tpm[,1:10]
 cts_test <- cbind(brca_test, ctl_test)
 ```
 
-Survivor subset and non-survivor subset
+Make a design matrix, use gender and previous diagnosis as blocking factors
 ```{r}
-alive_meta <- dplyr::filter(brca_drug_meta, tcga.gdc_cases.diagnoses.vital_status == "alive")
+brca_primary_metadata$tcga.gdc_cases.diagnoses.vital_status <- as.factor(brca_primary_metadata$tcga.gdc_cases.diagnoses.vital_status)
+brca_primary_metadata$tcga.gdc_cases.diagnoses.vital_status <- relevel(brca_primary_metadata$tcga.gdc_cases.diagnoses.vital_status, 'alive') #reorder to make 'alive' the reference
 
-dead_meta <- dplyr::filter(brca_drug_meta, tcga.gdc_cases.diagnoses.vital_status == "dead")
-```
-
-Make new metadata, control vs tumor (can add in other features here to be used as covariates, i.e. age, race, etc.)
-```{r}
-lm_meta <- data.frame("Samples" = c(colnames(brca_drug_meta), colnames(ctl_test)), Condition = c(rep("Tumor", length(brca_test)), rep("Control", length(ctl_test))))
-
-```
-
-Make a design matrix
-```{r}
-brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- as.factor(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
-brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- relevel(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status, 'alive') #reorder to make 'alive' the reference
-
-des <- model.matrix(~brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
+des <- model.matrix(~brca_primary_metadata$tcga.gdc_cases.diagnoses.vital_status)
 ```
 
 Filtering out genes with zero variance
 ```{r}
+#converted gene id's for counts 
+brca_tpm <- dplyr::select(brca_cts, matches(row.names(brca_primary_metadata)))
+
 #makes object for convenient use
 dge  <- edgeR::DGEList(counts=brca_tpm)
 #remove genes consistently zero or very low
@@ -354,7 +344,9 @@ indicesTest  <- sort(sample(indicesNotTraining, size=sampleSizeTest))
 # Finally, output the two dataframes for training, validation and test.
 vTraining   <- v[indicesTraining, ]
 vTest       <- v[indicesTest, ]
+```
 
+```{r}
 #After this, the usual limma pipelines for differential expression can be applied, for example:
 fit <- limma::lmFit(v, des)
 #fit <- limma::eBayes(fit)
@@ -371,10 +363,25 @@ lmres <- limma::eBayes(fit)
 #lmres  <- topTreat(lmres , coef=ncol(des), sort.by = "logFC", number = nrow(fit [["coefficients"]]), p.value = 0.05)
 tfit <- treat(lmres, fc=1.1)
 t <- topTreat(tfit,coef=2, number = 50)
+t
 
 summary(tfit)
 ```
 
+```{r}
+write.csv(t, file = "brca_survivors_degs.csv")
+```
+
+```{r}
+library(EnhancedVolcano)
+brca_degs_volcano <- EnhancedVolcano(t, lab = rownames(t), x = 'logFC', y = 'P.Value', pCutoff = 0.01, FCcutoff = 0.5, pointSize = 3.0, labSize = 4.0, col = c("#440154", "#21918c", "#fde725", "#5ec962"), title = "BRCA Survival DEGs", labFace = 'bold', boxedLabels = TRUE,drawConnectors = TRUE,widthConnectors = 0.5,colConnectors = 'black', max.overlaps = 70) 
+
+brca_degs_volcano
+```
+
+```{r}
+ggsave(brca_degs_volcano, filename = "volcano_brca_degs.png")
+```
 
 ```{r}
 brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status <- as.factor(brca_drug_meta$tcga.gdc_cases.diagnoses.vital_status)
@@ -420,11 +427,11 @@ mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", mirror = "useas
 gene_desc <- getBM(filters = "ensembl_gene_id", attributes = c("ensembl_gene_id","gene_biotype", "hgnc_symbol"), values = temp$gene, mart = mart)
 
 #find all protein-coding genes
-protCod = gene_desc[which(gene_desc$gene_biotype == 'protein_coding'), ]
-protCodIDs = protCod$ensembl_gene_id
+#protCod = gene_desc[which(gene_desc$gene_biotype == 'protein_coding'), ]
+#protCodIDs = protCod$ensembl_gene_id
 
 #filter for protein-coding genes
-brca_cts <- dplyr::filter(temp, gene %in% protCodIDs)
+#brca_cts <- dplyr::filter(temp, gene %in% protCodIDs)
 
 #merge count data and gene conversion table
 brca_cts <- merge(brca_cts, gene_desc, by.x = "gene", by.y = "ensembl_gene_id")
@@ -642,4 +649,15 @@ ggplot(data = preds.scores,
   theme(legend.position = "bottom",
         legend.title = element_blank())
 
+```
+
+
+#### Versions  
+```{r}
+R.Version()
+```
+
+
+```{r}
+installed.packages()[names(sessionInfo()$otherPkgs), "Version"]
 ```
